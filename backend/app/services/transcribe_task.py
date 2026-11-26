@@ -56,3 +56,8 @@ class TranscribeTaskService(BaseModuleService):
             if r.get("status") == "已产出"
             and float(r.get("平均置信度", "0")) < threshold
         ]
+
+    def get_adoption_receipt(self, task_id: str) -> dict[str, Any] | None:
+        """从转写任务查采纳分片回执：实际所用字节与另一份录音的出处。"""
+        from app.services.missing_scan import get_missing_scan_service
+        return get_missing_scan_service().get_receipt_by_task(task_id)

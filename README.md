@@ -81,5 +81,23 @@ npm run dev
 - 列表接口统一返回 `{ items, total, page, size }`，动作接口统一返回 `{ ok, message }`。
 - 状态流转只允许在 `app/services` 里改，路由层不做业务判断。
 
+## 缺片核对（批次缺片重扫与重投去重）
+
+缺片核对页（`/missing-scan`）跨媒体分片、失败重投与转写任务三个模块，按批次编排：
+
+- `POST /api/missing-scan/check` 批量检查片号：登记应收与已到片号，重算缺片并逐条
+  关联未结补采单；批次独立（异批同号不抵消），重复扫描不新增相同未结单。
+- `GET /api/missing-scan/batches/{批次}` 整组检查结果，缺片可分别领取。
+- `POST /api/missing-scan/batches/{批次}/items/{片号}/claim` 领取缺片，复用同一张补采单。
+- `POST /api/missing-scan/batches/{批次}/items/{片号}/arrivals` 上报到片；同区间不同
+  摘要的多份到片进入待确认。
+- `POST /api/missing-scan/batches/{批次}/items/{片号}/confirm` 确认采纳：结算补采单
+  （重投页可见已补齐）并产出采纳回执；重报采纳返回既有回执不重复。
+- `GET /api/missing-scan/receipts/by-task/{任务}` 从转写任务查回执：实际所用字节与
+  落选录音出处。
+
+核对状态落盘在 `backend/data/missing_scan_state.json`（可用环境变量
+`MISSING_SCAN_STATE_FILE` 覆盖），重启后恢复，重扫与重报采纳均不重复。
+
 领域：数据工程
 子方向：数据采集、爬虫与RPA

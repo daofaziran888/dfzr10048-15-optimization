@@ -65,3 +65,47 @@ class FailRedeliverService(BaseModuleService):
         """获取所有待重投的单据。"""
         rows = store.rows(self.MODULE)
         return [r for r in rows if r.get("status") == "待重投"]
+
+    OPEN_STATUSES = ("待重投", "重投中")
+
+    def ensure_open_order(
+        self, batch_id: str, seq: int, shard_id: str,
+    ) -> tuple[dict[str, Any], bool]:
+        """确保指定批次缺片存在一张未结补采单：已有未结单直接复用，不重复开单。"""
+        rows = store.rows(self.MODULE)
+        for r in rows:
+            if r.get("关联分片") == shard_id and r.get("status") in self.OPEN_STATUSES:
+                return r, False
+        base_no = f"FRDL-{batch_id}-S{seq:03d}"
+        existing = {r.get("重投编号") for r in rows}
+        order_no = base_no
+        suffix = 1
+        while order_no in existing:
+            suffix += 1
+            order_no = f"{base_no}-R{suffix}"
+        entry, _ = self.register_redeliver(
+            order_no, shard_id, "缺片补采", f"批次{batch_id}缺片{seq}", "仅补缺",
+        )
+        return entry, True
+
+    def is_order_open(self, order_no: str) -> bool:
+        """判断补采单是否仍未结（待重投或重投中）。"""
+        rows = store.rows(self.MODULE)
+        return any(
+            r.get("重投编号") == order_no and r.get("status") in self.OPEN_STATUSES
+            for r in rows
+        )
+
+    def settle_order(self, order_no: str, conclusion: str) -> tuple[bool, str]:
+        """结算补采单为已补齐；已结算的单据重复结算直接返回，不重复改动。"""
+        rows = store.rows(self.MODULE)
+        for r in rows:
+            if r.get("重投编号") == order_no:
+                if r.get("status") == "已补齐":
+                    return True, f"补采单 {order_no} 已结算，未重复处理"
+                r["重投结论"] = conclusion
+                r["重投时间"] = "2026-11-26"
+                r["status"] = "已补齐"
+                r["pending"] = False
+                return True, f"补采单 {order_no} 已结算"
+        return False, f"补采单 {order_no} 不存在"
